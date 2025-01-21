@@ -1,6 +1,5 @@
 use bevy::{
     prelude::*,
-    text::{Text, TextSection, TextStyle},
 };
 
 pub struct GameUiPlugin;
@@ -20,23 +19,16 @@ fn setup_ui(mut commands: Commands) {
 
     commands
         .spawn((
-            Button,
-            DealButton,
-            ButtonBundle {
+            NodeBundle {
                 background_color: BackgroundColor(Color::srgb(0.2, 0.2, 0.2)),
                 transform: Transform::from_xyz(0.0, -200.0, 0.0),
                 ..default()
             },
+            Button,
+            DealButton,
         ))
         .with_children(|parent| {
-            parent.spawn(Text::new("Deal").with_sections([TextSection {
-                value: "Deal".to_string(),
-                style: TextStyle {
-                    font_size: 20.0,
-                    color: Color::srgb(1.0, 1.0, 1.0),
-                    ..default()
-                },
-            }]));
+            parent.spawn(Text::new("Deal"));
         });
 }
 
