@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
+use bevy::input::mouse::MouseButton;
+use bevy::window::PrimaryWindow;
 
 pub struct ChessPlugin;
 
@@ -12,6 +14,11 @@ pub struct ChessPiece {
 #[derive(Resource, Default)]
 pub struct ChessAssets {
     pub pieces: HashMap<String, Handle<Image>>,
+}
+
+#[derive(Resource, Default)]
+struct SelectedPiece {
+    entity: Option<Entity>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,13 +40,24 @@ pub enum PieceColor {
 #[derive(Component)]
 struct MainCamera;
 
+#[derive(Component)]
+struct DraggedPiece;
+
+#[derive(PartialEq, PartialOrd, Debug)]
+struct FloatOrd(f32);
+
 impl Plugin for ChessPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChessAssets>()
+           .init_resource::<SelectedPiece>()
            .add_systems(PreStartup, spawn_camera)
            .add_systems(Startup, (
                load_chess_assets,
                setup_chess_board.after(load_chess_assets)
+           ))
+           .add_systems(Update, (
+               piece_drag_system,
+               piece_release_system,
            ));
     }
 }
@@ -172,5 +190,59 @@ fn get_initial_piece(rank: i32, file: i32) -> Option<(PieceType, PieceColor)> {
             PieceColor::White,
         )),
         _ => None,
+    }
+}
+
+fn piece_drag_system(
+    mut commands: Commands,
+    window_q: Query<&Window, With<PrimaryWindow>>,
+    camera_q: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mouse_button_input: Res<Input<MouseButton>>,
+    mut selected_piece: ResMut<SelectedPiece>,
+    pieces: Query<(Entity, &Transform), With<ChessPiece>>,
+) {
+    let (camera, camera_transform) = camera_q.single();
+    let window = window_q.single();
+
+    if let Some(world_position) = window.cursor_position()
+        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
+        .map(|ray| ray.origin.truncate())
+    {
+        if mouse_button_input.just_pressed(MouseButton::Left) {
+            // Find the piece closest to the click
+            let closest_piece = pieces.iter()
+                .min_by_key(|(_, transform)| {
+                    FloatOrd(transform.translation.truncate().distance(world_position))
+                });
+
+            if let Some((entity, transform)) = closest_piece {
+                // Only select if click is close enough (within 40 units)
+                if transform.translation.truncate().distance(world_position) < 40.0 {
+                    selected_piece.entity = Some(entity);
+                    commands.entity(entity).insert(DraggedPiece);
+                }
+            }
+        }
+
+        // Update dragged piece position
+        if let Some(entity) = selected_piece.entity {
+            if let Ok((_, mut transform)) = pieces.get_component_mut::<Transform>(entity) {
+                transform.translation.x = world_position.x;
+                transform.translation.y = world_position.y;
+            }
+        }
+    }
+}
+
+fn piece_release_system(
+    mut commands: Commands,
+    mouse_button_input: Res<Input<MouseButton>>,
+    mut selected_piece: ResMut<SelectedPiece>,
+) {
+    if mouse_button_input.just_released(MouseButton::Left) {
+        if let Some(entity) = selected_piece.entity.take() {
+            commands.entity(entity).remove::<DraggedPiece>();
+            // Here you could add logic to snap to grid or validate moves
+        }
     }
 } 
